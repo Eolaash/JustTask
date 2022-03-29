@@ -12,28 +12,21 @@ import (
 // fCountWordsWorker - parse web page by inURL for inWord in body content ()
 // REQ: caching will speed up such request (but not all content static in time) or FILTERING base URLList to remove duplicates
 func fCountWordsWorker(inWord string, inURL string, inRequestTimeout int) int {
-	// set default value
-	var tResultValue = 0
 
-	// create HTTP client with timeout
+	tResultValue := 0
+
 	tClient := &http.Client{
 		Timeout: time.Duration(inRequestTimeout) * time.Second,
 	}
 
-	// make GET request with preseted timeout
 	tResponse, tErr := tClient.Get(inURL)
 	if tErr != nil {
-		// log.Fatal(tErr)
 		return tResultValue
 	}
-
-	// responce should be closed anyway later
 	defer tResponse.Body.Close()
 
-	// read responce body as []byte (can be converted to string later)
 	tContent, tErr := ioutil.ReadAll(tResponse.Body)
 	if tErr != nil {
-		// log.Fatal(tErr)
 		return tResultValue
 	}
 
@@ -53,16 +46,9 @@ func fCountWords(inWord string, inURLList []string, inPoolSize int, inRequestTim
 		return
 	}
 
-	// channel for limiting parallel goroutines (channel in role of slots)
 	tActiveJobs := make(chan struct{}, inPoolSize)
-
-	// syncronyzer (for all jobs to be done)
 	var wg sync.WaitGroup
-
-	// mutex for avoiding any collisions on shared resource (tTotalCount) ...oversafed?
-	var tLocker sync.Mutex
-
-	// total value default (int)
+	var tLocker sync.Mutex // mutex for avoiding any collisions on shared resource (tTotalCount) ...oversafed?
 	tTotalCount := 0
 
 	// workers runner
@@ -72,14 +58,12 @@ func fCountWords(inWord string, inURLList []string, inPoolSize int, inRequestTim
 		tActiveJobs <- struct{}{}
 		wg.Add(1)
 
-		// anonymous goroutine call with job remover after it (wraping worker)
 		go func(inWord string, inURL string, inRequestTimeout int) {
 			defer wg.Done()
 
 			tResult := fCountWordsWorker(inWord, inURL, inRequestTimeout) // silent version - any errors just ignored (unsafe?) and returning default value
 
-			// using mutex to work with shared variable (error with operation can create deadlock?)
-			tLocker.Lock()
+			tLocker.Lock()         // using mutex to work with shared variable (error with operation can create deadlock?)
 			tTotalCount += tResult // safe modification under mutex locker (is unbuffered channel will be better than mutex?)
 			tLocker.Unlock()
 
@@ -87,23 +71,18 @@ func fCountWords(inWord string, inURLList []string, inPoolSize int, inRequestTim
 
 			// free job slot
 			<-tActiveJobs
-		}(inWord, inURLList[tJobIndex], inRequestTimeout) // passing parameters
+		}(inWord, inURLList[tJobIndex], inRequestTimeout)
 	}
 
-	// waiting any active gouroutines
+	// finalyze
 	wg.Wait()
-
-	// Close the channel
 	close(tActiveJobs)
-
-	// Show results
 	fmt.Printf("Total: %d\n", tTotalCount)
 }
 
 // main
 func main() {
 
-	// presets
 	tMaxWorkers := 5
 	tTargetWord := "Go"   // case sensetive
 	tRequestTimeout := 30 // request timeout in seconds
