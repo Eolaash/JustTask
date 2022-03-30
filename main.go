@@ -47,8 +47,8 @@ func fCountWords(inWord string, inURLList []string, inPoolSize int, inRequestTim
 	}
 
 	tActiveJobs := make(chan struct{}, inPoolSize)
+	tResultChan := make(chan int, len(inURLList)) //
 	var wg sync.WaitGroup
-	var tLocker sync.Mutex // mutex for avoiding any collisions on shared resource (tTotalCount) ...oversafed?
 	tTotalCount := 0
 
 	// workers runner
@@ -62,11 +62,7 @@ func fCountWords(inWord string, inURLList []string, inPoolSize int, inRequestTim
 			defer wg.Done()
 
 			tResult := fCountWordsWorker(inWord, inURL, inRequestTimeout) // silent version - any errors just ignored (unsafe?) and returning default value
-
-			tLocker.Lock()         // using mutex to work with shared variable (error with operation can create deadlock?)
-			tTotalCount += tResult // safe modification under mutex locker (is unbuffered channel will be better than mutex?)
-			tLocker.Unlock()
-
+			tResultChan <- tResult
 			fmt.Printf("Count for %s: %d\n", inURL, tResult)
 
 			// free job slot
@@ -76,6 +72,12 @@ func fCountWords(inWord string, inURLList []string, inPoolSize int, inRequestTim
 
 	// finalyze
 	wg.Wait()
+
+	close(tResultChan)
+	for tValue := range tResultChan {
+		tTotalCount += tValue
+	}
+
 	close(tActiveJobs)
 	fmt.Printf("Total: %d\n", tTotalCount)
 }
